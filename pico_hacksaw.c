@@ -11,6 +11,8 @@
 #include "hardware/adc.h"
 #include "hardware/dma.h"
 
+#include "freqlookup.h"
+
 #define RUNCORE0_OSCS
 #define RUNCORE1_OSCS
 
@@ -60,13 +62,30 @@ static int __not_in_flash("mydata") phase2=0;
 static bool __not_in_flash("mydata") y_2=0;
 static int __not_in_flash("mydata") err2=0;
 
-void __not_in_flash_func(setFrequencies)(const size_t base, const size_t detune, const size_t acc) {
+
+static size_t __not_in_flash("mydata") octave0=0;
+static size_t __not_in_flash("mydata") octave1=0;
+static size_t __not_in_flash("mydata") octave2=0;
+static size_t __not_in_flash("mydata") octave3=0;
+static size_t __not_in_flash("mydata") octave4=0;
+static size_t __not_in_flash("mydata") octave5=0;
+
+
+void __not_in_flash_func(setFrequencies)(size_t base, const size_t detune, const size_t acc) {
+  // float adj = base * 1.1;
+  // base = (size_t)adj;
   wavelen0 = base;
   wavelen1 = wavelen0 + detune + acc;
   wavelen2 = wavelen1 + detune + acc;
   wavelen3 = wavelen2 + detune + acc;
   wavelen4 = wavelen3 + detune + acc;
   wavelen5 = wavelen4 + detune + acc;
+  wavelen0 = wavelen0 << octave0;
+  wavelen1 = wavelen1 << octave1;
+  wavelen2 = wavelen2 << octave2;
+  wavelen3 = wavelen3 >> octave3;
+  wavelen4 = wavelen4 >> octave4;
+  wavelen5 = wavelen5 >> octave5;
 }
 
 
@@ -230,22 +249,181 @@ void __not_in_flash_func(core1_main)()
 }
 
 
-// static inline void __isr irq_handler_adc_reader() {
-//   gpio_put(LED_PIN, 1);
-//   adc_select_input(0);
-//   int val = adc_read();
-//   setFrequencies(val * 10, 10);
-//   // printf("int1 %d\n", val);
-//   pio_interrupt_clear(pio0, 1);
-// }
 
-
-// static int f=1000;
+size_t lastOctaveIdx = 0;
 bool __not_in_flash_func(repeating_timer_callback)(__unused struct repeating_timer *t) {
     // printf("Repeat at %lld\n", time_us_64());
-    setFrequencies((capture_buf[0] * 16) + 50, capture_buf[1] >> 3, capture_buf[2] >> 2);
-    // setFrequencies(f, 10);
-    // f+=10;
+  
+    //use hardware divide?
+    size_t octaveIdx = capture_buf[3] / 256;  // 16 divisions
+    if (octaveIdx != lastOctaveIdx) {
+      lastOctaveIdx = octaveIdx;
+      switch(octaveIdx) {
+        case 0:
+        {
+          octave0 = 0;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 0;
+          octave5 = 0;
+          break;
+        }
+        case 1:
+        {
+          octave0 = 1;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 0;
+          octave5 = 0;
+          break;
+        }
+        case 2:
+        {
+          octave0 = 2;
+          octave1 = 1;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 0;
+          octave5 = 0;
+          break;
+        }
+        case 3:
+        {
+          octave0 = 3;
+          octave1 = 2;
+          octave2 = 1;
+          octave3 = 0;
+          octave4 = 0;
+          octave5 = 0;
+          break;
+        }
+        case 4:
+        {
+          octave0 = 3;
+          octave1 = 2;
+          octave2 = 1;
+          octave3 = 0;
+          octave4 = 0;
+          octave5 = 1;
+          break;
+        }
+        case 5:
+        {
+          octave0 = 3;
+          octave1 = 2;
+          octave2 = 1;
+          octave3 = 0;
+          octave4 = 1;
+          octave5 = 2;
+          break;
+        }
+        case 6:
+        {
+          octave0 = 3;
+          octave1 = 2;
+          octave2 = 1;
+          octave3 = 1;
+          octave4 = 2;
+          octave5 = 3;
+          break;
+        }
+        case 7:
+        {
+          octave0 = 2;
+          octave1 = 2;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 2;
+          octave5 = 2;
+          break;
+        }
+        case 8:
+        {
+          octave0 = 2;
+          octave1 = 1;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 1;
+          octave5 = 2;
+          break;
+        }
+        case 9:
+        {
+          octave0 = 2;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 0;
+          octave5 = 1;
+          break;
+        }
+        case 10:
+        {
+          octave0 = 1;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 0;
+          octave5 = 2;
+          break;
+        }
+        case 11:
+        {
+          octave0 = 0;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 2;
+          octave5 = 2;
+          break;
+        }
+        case 12:
+        {
+          octave0 = 0;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 2;
+          octave5 = 3;
+          break;
+        }
+        case 13:
+        {
+          octave0 = 0;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 1;
+          octave4 = 2;
+          octave5 = 3;
+          break;
+        }
+        case 14:
+        {
+          octave0 = 0;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 1;
+          octave5 = 2;
+          break;
+        }
+        case 15:
+        {
+          octave0 = 0;
+          octave1 = 0;
+          octave2 = 0;
+          octave3 = 0;
+          octave4 = 0;
+          octave5 = 1;
+          break;
+        }
+        default:;
+      }
+    }
+
+    setFrequencies(freqtable[capture_buf[0]], capture_buf[1] >> 2, capture_buf[2] >> 2);
     return true;
 }
 
