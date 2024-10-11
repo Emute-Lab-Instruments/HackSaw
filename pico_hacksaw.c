@@ -13,17 +13,18 @@
 
 #include "freqlookup.h"
 
+#include "saw.h"
+
+#include <stdlib.h>
+
 #define RUNCORE0_OSCS
-#define RUNCORE1_OSCS
+#define RUNCORE1_OSCS 
 
 //extra optimisations: https://stackoverflow.com/questions/14492436/g-optimization-beyond-o3-ofast
 //https://forums.raspberrypi.com/viewtopic.php?t=323982 
 
 #include <stdio.h>
 
-//adc try https://forums.raspberrypi.com/viewtopic.php?t=364565
-
-//try continuous sampling ADC with DMA https://github.com/raspberrypi/pico-examples/blob/master/adc/dma_capture/dma_capture.c
 
 
 #define CAPTURE_CHANNEL 0
@@ -32,35 +33,10 @@ static uint16_t __not_in_flash("mydata") capture_buf[16] __attribute__((aligned(
 // uint8_t __not_in_flash("mydata") capture_buf2[1] __attribute__((aligned(2048)));
 
 
-#define LED_PIN 22
-#define OSC1_PIN 7
-#define OSC2_PIN 8
-#define OSC3_PIN 9
-#define OSC4_PIN 10
-#define OSC5_PIN 11
-#define OSC6_PIN 12
-
-const int pdmFreq = 44100 * 384;
+// const int pdmFreq = 44100 * 384;
+const int pdmFreq = 44100 * 128;
 
 
-static int __not_in_flash("mydata") wavelen0=40000;
-static int __not_in_flash("mydata") wavelen1=39400;
-static int __not_in_flash("mydata") wavelen2=40600;
-static int __not_in_flash("mydata") wavelen3=41100;
-static int __not_in_flash("mydata") wavelen4=41500;
-static int __not_in_flash("mydata") wavelen5=41900;
-
-static int __not_in_flash("mydata") phase0=0;
-static bool __not_in_flash("mydata") y_0=0;
-static int __not_in_flash("mydata") err0=0;
-
-static int __not_in_flash("mydata") phase1=0;
-static bool __not_in_flash("mydata") y_1=0;
-static int __not_in_flash("mydata") err1=0;
-
-static int __not_in_flash("mydata") phase2=0;
-static bool __not_in_flash("mydata") y_2=0;
-static int __not_in_flash("mydata") err2=0;
 
 
 static size_t __not_in_flash("mydata") octave0=0;
@@ -88,62 +64,90 @@ void __not_in_flash_func(setFrequencies)(size_t base, const size_t detune, const
   wavelen5 = wavelen5 >> octave5;
 }
 
-
-
-static inline void __attribute__((hot)) __isr irq_handler_saw() {
-// static inline void __not_in_flash_func(irq_handler_saw)() {
-  // analogWrite(22,512);
-
-  if (phase0>=wavelen0) {
-    phase0 = 0;
-  }
-  phase0++;
-
+static inline void __isr irq_handler_flipTable() {
+  static int __not_in_flash("mydata") count=0;
+  // static const int counts[] = {28,38,19,59,23,12,40,124,92,29,19,459,19,49,29,19,2001,12,490,2000,12344};
+  static int __not_in_flash("mydata") counts[] = {20000,20000,1000};
+  // static const int counts[] = {100,100,100,100,100};
+  //idea: move around an offset window within an array, moving two values each time, all values must always add up to wavelength
+  static int __not_in_flash("mydata") bit=0;
+  static int __not_in_flash("mydata") countPtr = 0;
+  static int __not_in_flash("mydata") countTarget = 0;
+  // static int __not_in_flash("mydata")bitOnCount=0;
   
-  y_0 = phase0 >= err0 ? 1 : 0;
-  err0 = (y_0 ? wavelen0 : 0) - phase0 + err0;
-  gpio_put(OSC1_PIN, y_0);
-
-
-  ////// OSC 2
-
-
-  if (phase1>=wavelen1) {
-    phase1 = 0;
+  if (count>=countTarget) {
+    bit = 1-bit;
+    countTarget = counts[countPtr];
+    count = 0;
+    countPtr++;
+    if (countPtr == 3 ) {
+      countPtr=0;
+    }
   }
-  phase1++;
-
-  y_1 = phase1 >= err1 ? 1 : 0;
-  err1 = (y_1 ? wavelen1 : 0) - phase1 + err1;
-  gpio_put(OSC2_PIN, y_1);
-
-
-  ////// OSC 3
-
-
-  if (phase2>=wavelen2) {
-    phase2 = 0;
-  }
-  phase2++;
-
-  y_2 = phase2 >= err2 ? 1 : 0;
-  err2 = (y_2 ? wavelen2 : 0) - phase2 + err2;
-  gpio_put(OSC3_PIN, y_2);
-
-
-  // static size_t __not_in_flash("mydata") adcReadCounter=0;
-  // static int __not_in_flash("mydata") lastCapture = 0;
-  // if (adcReadCounter == 50000) {
-  //   if (capture_buf[0] != lastCapture) {
-  //     setFrequencies((capture_buf[0] * 16) + 50, capture_buf[1]);
-  //     lastCapture = capture_buf[0];
-  //   }
-  //   adcReadCounter=0;
-  // }
-  // adcReadCounter++;
+  gpio_put(OSC1_PIN, bit);  
+  gpio_put(OSC2_PIN, bit);  
+  gpio_put(OSC3_PIN, bit);  
+  gpio_put(OSC4_PIN, bit);  
+  gpio_put(OSC5_PIN, bit);  
+  gpio_put(OSC6_PIN, bit);  
+  count++;
 
   pio_interrupt_clear(pio0, 0);
+
 }
+
+
+static inline void __isr irq_handler_test() {
+  static int count=0;
+  // static const int counts[] = {28,38,19,59,23,12,40,124,92,29,19,459,19,49,29,19,2001,12,490,2000,12344};
+  // static const int counts[] = {20000,20000};
+  // static const int counts[] = {100,100,100,100,100};
+  static int bit=0;
+  static int countTarget = 50000;
+  
+  if (count>=countTarget) {
+    bit = 1-bit;
+    countTarget >>=2;
+    //create harmonics
+    // countTarget += 89;
+    // countTarget &=872128;
+    count = 0;
+    if (countTarget <= 0 ) {
+      countTarget += wavelen0;
+    }
+  }
+  gpio_put(OSC1_PIN, bit);  
+  gpio_put(OSC2_PIN, bit);  
+  gpio_put(OSC3_PIN, bit);  
+  count++;
+
+  pio_interrupt_clear(pio0, 0);
+
+}
+
+
+static inline void __isr irq_handler_bitosc() {
+  static int bit=0;
+  static int32_t oscx=18892;
+  oscx *= 139;
+  oscx -= 53;
+  oscx >>= 3;
+  bit = (oscx & 0b10) >> 1;
+  gpio_put(OSC1_PIN, bit);  
+
+
+  static int bit1=0;
+  static int32_t oscx1=18892;
+  oscx1 *= 138;
+  oscx1 -= 53;
+  oscx1 >>= 3;
+  bit1 = (oscx1 & 0b1000) >> 3;
+  gpio_put(OSC2_PIN, bit1);  
+
+  pio_interrupt_clear(pio0, 0);
+
+}
+
 
 void dsp_clock_forever(PIO pio, uint sm, uint offset, uint freq) {
     dsp_clock_program_init(pio, sm, offset);
@@ -164,60 +168,10 @@ void __not_in_flash_func(setupOscPin)(int pin) {
   gpio_init(pin);
   gpio_set_dir(pin, GPIO_OUT);
   gpio_set_slew_rate(pin, GPIO_SLEW_RATE_FAST);
-  gpio_set_drive_strength(pin, GPIO_DRIVE_STRENGTH_4MA);
+  gpio_set_drive_strength(pin, GPIO_DRIVE_STRENGTH_12MA);
   gpio_put(pin, 0);
 }
 
-static inline void __attribute__((hot)) __isr irq_handler_saw_core1() {
-
-  //OSC 4
-  static int __not_in_flash("mydata") phase3=0;
-  static bool __not_in_flash("mydata") y_3=0;
-  static int __not_in_flash("mydata") err3=0;
-
-  if (phase3>=wavelen3) {
-    phase3 = 0;
-  }
-  phase3++;
-
-  
-  y_3 = phase3 >= err3 ? 1 : 0;
-  err3 = (y_3 ? wavelen3 : 0) - phase3 + err3;
-  gpio_put(OSC4_PIN, y_3);
-
-  //// OSC 5
-
-  static int __not_in_flash("mydata") phase4=0;
-  static bool __not_in_flash("mydata") y_4=0;
-  static int __not_in_flash("mydata") err4=0;
-
-  if (phase4>=wavelen4) {
-    phase4 = 0;
-  }
-  phase4++;
-
-  y_4 = phase4 >= err4 ? 1 : 0;
-  err4 = (y_4 ? wavelen4 : 0) - phase4 + err4;
-  gpio_put(OSC5_PIN, y_4);
-
-
-  ////// OSC 6
-
-  static int __not_in_flash("mydata") phase5=0;
-  static bool __not_in_flash("mydata") y_5=0;
-  static int __not_in_flash("mydata") err5=0;
-
-  if (phase5>=wavelen5) {
-    phase5 = 0;
-  }
-  phase5++;
-
-  y_5 = phase5 >= err5 ? 1 : 0;
-  err5 = (y_5 ? wavelen5 : 0) - phase5 + err5;
-  gpio_put(OSC6_PIN, y_5);
-
-  pio_interrupt_clear(pio1, 0);
-}
 
 
 void __not_in_flash_func(core1_main)()
@@ -511,8 +465,8 @@ int __not_in_flash_func(main)() {
   // const int pdmFreq = 44100 * 512;
 
   dsp_clock_forever(pio, 0, offset, pdmFreq);
-
   irq_set_exclusive_handler(PIO0_IRQ_0, irq_handler_saw);
+  // irq_set_exclusive_handler(PIO0_IRQ_0, irq_handler_flipTable);
   irq_set_enabled(PIO0_IRQ_0, true);
   irq_set_priority(PIO0_IRQ_0, 40);
   pio0->inte0 = PIO_IRQ0_INTE_SM0_BITS;  
@@ -534,7 +488,7 @@ int __not_in_flash_func(main)() {
 
   // bool led=0;
   while (1) {    
-    __wfi();
+    // __wfi();
     // // for(int i=0; i < adc_fifo_get_level(); i++) {
     // for(int i=0; i < 4; i++) {
     //   // printf("%d\t", adc_fifo_get());
@@ -543,7 +497,7 @@ int __not_in_flash_func(main)() {
     // printf("\n");
     // // gpio_put(LED_PIN, led);
     // // led = !led;
-    // sleep_ms(50);
+    // sleep_ms(100);
   }
 
 }
